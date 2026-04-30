@@ -1,6 +1,4 @@
 # 11348469_Individual_Project
-Code Artifact Appendices 
-# MPPT Buck Converter & BLE Telemetry System
 **Student ID:** 11348469
 
 This repository contains the software artefacts for my Final Year Project
