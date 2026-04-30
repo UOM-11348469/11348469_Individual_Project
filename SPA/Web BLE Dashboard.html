@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MPPT Telemetry</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg:         #0a0c0f;
+            --surface:    #111419;
+            --border:     #2a2f3a;
+            --border2:    #363d4d;
+            --text:       #f0f2f5;
+            --muted:      #8b95a6;
+            --accent-pwr: #f5a623;
+            --accent-v:   #3ddc84;
+            --accent-i:   #5b9cf6;
+            --mono:       'JetBrains Mono', monospace;
+            --sans:       'Space Grotesk', sans-serif;
+        }
+
+        body {
+            font-family: var(--sans);
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 14px;
+            gap: 10px;
+            overflow: hidden;
+        }
+
+        /* TOP BAR */
+        .topbar {
+            display: flex;
+            align-items: stretch;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+
+        #connectBtn {
+            font-family: var(--mono);
+            font-size: 19px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            padding: 0 20px;
+            border: 2px solid var(--accent-i);
+            border-radius: 5px;
+            background: transparent;
+            color: var(--accent-i);
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        #connectBtn:hover:not(:disabled) { background: var(--accent-i); color: var(--bg); }
+        #connectBtn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+        #console {
+            flex: 1;
+            background: #070909;
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            padding: 7px 12px;
+            font-family: var(--mono);
+            font-size: 16px;
+            line-height: 1.4;
+            color: #3ddc84;
+            overflow-y: auto;
+            height: 75px;
+        }
+        #console::-webkit-scrollbar { width: 3px; }
+        #console::-webkit-scrollbar-thumb { background: var(--border2); }
+
+        /* MAIN GRID */
+        .main {
+            display: grid;
+            grid-template-columns: 1fr 210px;
+            gap: 10px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        /* CHART PANEL */
+        .chart-panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px 18px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-height: 0;
+        }
+
+        .chart-legend {
+            display: flex;
+            gap: 22px;
+            flex-shrink: 0;
+            padding-left: 2px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            font-family: var(--mono);
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--muted);
+            letter-spacing: 0.02em;
+        }
+        .legend-pip {
+            width: 28px;
+            height: 3px;
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+
+        .chart-wrap {
+            flex: 1;
+            position: relative;
+            min-height: 0;
+        }
+        .chart-wrap canvas { position: absolute; inset: 0; }
+
+        /* STATS PANEL */
+        .stats-panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px 14px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        /* State badge */
+        #stateDisplay {
+            font-family: var(--mono);
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            padding: 7px 10px;
+            border-radius: 5px;
+            background: rgba(239,68,68,0.15);
+            color: #ef4444;
+            border: 1.5px solid rgba(239,68,68,0.35);
+            text-align: center;
+            transition: all 0.3s;
+            flex-shrink: 0;
+            margin-bottom: 10px;
+        }
+
+        .divider {
+            height: 1px;
+            background: var(--border);
+            flex-shrink: 0;
+            margin: 6px 0;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+            padding: 3px 0;
+        }
+        .stat-label {
+            font-family: var(--mono);
+            font-size: 18px;
+            color: var(--muted);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .stat-value {
+            font-family: var(--mono);
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text);
+        }
+        .stat-value.pwr  { color: var(--accent-pwr); }
+        .stat-value.volt { color: var(--accent-v); }
+        .stat-value.curr { color: var(--accent-i); }
+
+        /* Battery */
+        .battery-section {
+            margin-top: auto;
+            padding-top: 8px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+        .batt-body {
+            position: relative;
+            width: 34px;
+            height: 56px;
+            border: 2.5px solid var(--border2);
+            border-radius: 3px;
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+        .batt-body::before {
+            content: '';
+            position: absolute;
+            top: -7px; left: 50%;
+            transform: translateX(-50%);
+            width: 13px; height: 5px;
+            background: var(--border2);
+            border-radius: 2px 2px 0 0;
+        }
+        .batt-fill {
+            position: absolute;
+            bottom: 0; left: 0;
+            width: 100%;
+            background: var(--accent-v);
+            transition: height 0.5s ease, background 0.5s;
+            height: 0%;
+        }
+        .batt-bolt {
+            position: absolute; inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            z-index: 2;
+        }
+        .batt-info { flex: 1; }
+        .batt-pct {
+            font-family: var(--mono);
+            font-size: 21px;
+            font-weight: 700;
+            color: var(--text);
+            line-height: 1;
+        }
+        .batt-sub {
+            font-family: var(--mono);
+            font-size: 13px;
+            color: var(--muted);
+            margin-top: 3px;
+            letter-spacing: 0.04em;
+        }
+    </style>
+</head>
+<body>
+
+<div class="topbar">
+    <button id="connectBtn">Connect to HM-10</button>
+    <div id="console">Waiting for Bluetooth...</div>
+</div>
+
+<div class="main">
+    <div class="chart-panel">
+        <div class="chart-legend">
+            <div class="legend-item">
+                <div class="legend-pip" style="background:var(--accent-pwr)"></div>
+                Power In (W)
+            </div>
+            <div class="legend-item">
+                <div class="legend-pip" style="background:var(--accent-v)"></div>
+                Converter Vout (V)
+            </div>
+            <div class="legend-item">
+                <div class="legend-pip" style="background:var(--accent-i)"></div>
+                Charging Current (A)
+            </div>
+        </div>
+        <div class="chart-wrap">
+            <canvas id="pvChart"></canvas>
+        </div>
+    </div>
+
+    <div class="stats-panel">
+        <div id="stateDisplay">SYSTEM_OFF</div>
+
+        <div class="stat-row">
+            <span class="stat-label">Power In</span>
+            <span class="stat-value pwr" id="valPwr">— W</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Vpanel</span>
+            <span class="stat-value" id="valVpanel">— V</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Ipanel</span>
+            <span class="stat-value curr" id="valIpanel">— mA</span>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="stat-row" id="rowVout" style="display:none">
+            <span class="stat-label">Vout</span>
+            <span class="stat-value volt" id="valVout">— V</span>
+        </div>
+        <div class="stat-row" id="rowDuty" style="display:none">
+            <span class="stat-label">Duty Cycle</span>
+            <span class="stat-value" id="valDuty">— %</span>
+        </div>
+        <div class="stat-row" id="rowIout" style="display:none">
+            <span class="stat-label">Iout</span>
+            <span class="stat-value curr" id="valIout">— mA</span>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="stat-row">
+            <span class="stat-label">Vbatt</span>
+            <span class="stat-value volt" id="valVbatt">— V</span>
+        </div>
+
+        <div class="battery-section">
+            <div class="batt-body">
+                <div class="batt-fill" id="batFill"></div>
+                <div class="batt-bolt" id="batBolt">⚡</div>
+            </div>
+            <div class="batt-info">
+                <div class="batt-pct" id="batPct">—%</div>
+                <div class="batt-sub">State of Charge</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const connectBtn = document.getElementById('connectBtn');
+    const consoleDiv = document.getElementById('console');
+    const HM10_SERVICE = 0xffe0;
+    const HM10_CHARACTERISTIC = 0xffe1;
+    let bleCharacteristic, rxBuffer = "";
+    const MAX_PTS = 101;
+
+    // Chart config — all font sizes set explicitly so they are large enough in screenshots
+    const TICK_SIZE  = 20;
+    const TITLE_SIZE = 20;
+
+    const ctx = document.getElementById('pvChart').getContext('2d');
+
+    const pvChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                {
+                    label: 'Power In (W)',
+                    data: [],
+                    borderColor: '#f5a623',
+                    backgroundColor: 'rgba(245,166,35,0.07)',
+                    fill: true,
+                    yAxisID: 'y',
+                    tension: 0.3,
+                    pointRadius: 0,
+                    borderWidth: 2.5
+                },
+                {
+                    label: 'Converter Vout (V)',
+                    data: [],
+                    borderColor: '#3ddc84',
+                    backgroundColor: 'transparent',
+                    yAxisID: 'y',
+                    tension: 0.3,
+                    pointRadius: 0,
+                    borderWidth: 2
+                },
+                {
+                    label: 'Charging Current (A)',
+                    data: [],
+                    borderColor: '#5b9cf6',
+                    backgroundColor: 'rgba(91,156,246,0.07)',
+                    fill: true,
+                    yAxisID: 'y1',
+                    tension: 0.3,
+                    pointRadius: 0,
+                    borderWidth: 2
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#181c23',
+                    borderColor: '#363d4d',
+                    borderWidth: 1,
+                    titleColor: '#8b95a6',
+                    bodyColor: '#f0f2f5',
+                    padding: 10,
+                    titleFont: { family: "'JetBrains Mono', monospace", size: 12 },
+                    bodyFont:  { family: "'JetBrains Mono', monospace", size: 13 },
+                }
+            },
+            scales: {
+                x: {
+                    grid: { color: '#181c23' },
+                    border: { color: '#2a2f3a' },
+                    ticks: {
+                        maxTicksLimit: 5,
+                        maxRotation: 0,
+                        color: '#c4cad6',
+                        font: { family: "'JetBrains Mono', monospace", size: TICK_SIZE, weight: '500' }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Time',
+                        color: '#c4cad6',
+                        font: { family: "'JetBrains Mono', monospace", size: TITLE_SIZE, weight: '700' }
+                    }
+                },
+                y: {
+                    type: 'linear',
+                    position: 'left',
+                    grid: { color: '#181c23' },
+                    border: { color: '#2a2f3a' },
+                    min: 0, max: 60,
+                    ticks: {
+                        stepSize: 10,
+                        color: '#c4cad6',
+                        font: { family: "'JetBrains Mono', monospace", size: TICK_SIZE, weight: '500' }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Power (W) & Voltage (V)',
+                        color: '#c4cad6',
+                        font: { family: "'JetBrains Mono', monospace", size: TITLE_SIZE, weight: '700' }
+                    }
+                },
+                y1: {
+                    type: 'linear',
+                    position: 'right',
+                    grid: { drawOnChartArea: false },
+                    border: { color: '#2a2f3a' },
+                    min: 0, max: 3.0,
+                    ticks: {
+                        stepSize: 0.5,
+                        color: '#5b9cf6',
+                        font: { family: "'JetBrains Mono', monospace", size: TICK_SIZE, weight: '500' }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Current (A)',
+                        color: '#5b9cf6',
+                        font: { family: "'JetBrains Mono', monospace", size: TITLE_SIZE, weight: '700' }
+                    }
+                }
+            },
+            animation: false
+        }
+    });
+
+    function log(text) {
+        consoleDiv.innerHTML += text + '<br>';
+        consoleDiv.scrollTop = consoleDiv.scrollHeight;
+    }
+
+    function parseTelemetry(csv) {
+        const p = csv.split(',');
+        if (p.length < 7) return;
+        const stateNum = parseInt(p[0]);
+        const v_panel = parseFloat(p[1]);
+        const i_panel = parseFloat(p[2]);
+        const v_out   = parseFloat(p[3]);
+        const v_batt  = parseFloat(p[4]);
+        const i_out   = parseFloat(p[5]);
+        const duty    = parseInt(p[6]);
+        const power   = v_panel * i_panel;
+
+        const now = new Date();
+        const t = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+
+        document.getElementById('valPwr').innerText    = `${power.toFixed(2)} W`;
+        document.getElementById('valVpanel').innerText = `${v_panel.toFixed(2)} V`;
+        document.getElementById('valIpanel').innerText = `${(i_panel*1000).toFixed(0)} mA`;
+        document.getElementById('valVbatt').innerText  = `${v_batt.toFixed(2)} V`;
+
+        const sd = document.getElementById('stateDisplay');
+        const active = stateNum >= 2;
+        ['rowVout','rowDuty','rowIout'].forEach(id =>
+            document.getElementById(id).style.display = active ? 'flex' : 'none');
+        document.getElementById('batBolt').style.display = active ? 'flex' : 'none';
+
+        if (!active) {
+            sd.innerText = 'SYSTEM_OFF';
+            sd.style.cssText = 'background:rgba(239,68,68,0.15);color:#ef4444;border-color:rgba(239,68,68,0.35)';
+        } else {
+            document.getElementById('valVout').innerText = `${v_out.toFixed(2)} V`;
+            document.getElementById('valDuty').innerText = `${duty} %`;
+            document.getElementById('valIout').innerText = `${(i_out*1000).toFixed(0)} mA`;
+            if (stateNum === 2) {
+                sd.innerText = 'MPPT_CC_MODE';
+                sd.style.cssText = 'background:rgba(245,166,35,0.15);color:#f5a623;border-color:rgba(245,166,35,0.35)';
+            } else {
+                sd.innerText = 'MPPT_CV_MODE';
+                sd.style.cssText = 'background:rgba(91,156,246,0.15);color:#5b9cf6;border-color:rgba(91,156,246,0.35)';
+            }
+        }
+
+        let pct = ((v_batt - 12.0) / (16.8 - 12.0)) * 100;
+        pct = Math.max(0, Math.min(100, pct));
+        const fill = document.getElementById('batFill');
+        fill.style.height = `${pct}%`;
+        fill.style.background = pct < 20 ? '#ef4444' : pct < 50 ? '#f5a623' : '#3ddc84';
+        document.getElementById('batPct').innerText = `${pct.toFixed(0)}%`;
+
+        pvChart.data.labels.push(t);
+        pvChart.data.datasets[0].data.push(power);
+        pvChart.data.datasets[1].data.push(v_out);
+        pvChart.data.datasets[2].data.push(i_out);
+        if (pvChart.data.labels.length > MAX_PTS) {
+            pvChart.data.labels.shift();
+            pvChart.data.datasets.forEach(d => d.data.shift());
+        }
+        pvChart.update();
+    }
+
+    connectBtn.addEventListener('click', async () => {
+        try {
+            log('Requesting Bluetooth...');
+            const device = await navigator.bluetooth.requestDevice({ filters: [{ services: [HM10_SERVICE] }] });
+            const server = await device.gatt.connect();
+            const service = await server.getPrimaryService(HM10_SERVICE);
+            bleCharacteristic = await service.getCharacteristic(HM10_CHARACTERISTIC);
+            await bleCharacteristic.startNotifications();
+            log('Connected! Awaiting telemetry...');
+            bleCharacteristic.addEventListener('characteristicvaluechanged', (e) => {
+                rxBuffer += new TextDecoder().decode(e.target.value);
+                let lines = rxBuffer.split('\n');
+                rxBuffer = lines.pop();
+                for (let line of lines) {
+                    line = line.trim();
+                    if (line.includes(',')) parseTelemetry(line);
+                    else if (line.length > 2) log(line);
+                }
+            });
+        } catch (err) { log('Error: ' + err); }
+    });
+</script>
+</body>
+</html>
