@@ -14,4 +14,4 @@ As per the submission requirements, the code is divided into two main components
 ## Third-Party Code and Libraries
 The following frameworks were utilised:
 * **Mbed OS:** Used as the core RTOS for the STM32 firmware.
-* **Chart.js:** Utilised in the `/Web_Dashboard/` to render the live time-series graphs for voltage and current.
+* **Chart.js:** Utilised in the Web BLE Dashboard.html to render the live time-series graphs for voltage and current.
